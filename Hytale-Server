@@ -282,13 +282,22 @@ check_for_updates() {
   fi
   
   # Download the raw script and extract version directly using wget
-  mkdir -p "$TEMP_DIR"
-  local temp_check="$TEMP_DIR/.hytale-version-check-$$"
+  # Use /tmp instead of TEMP_DIR to avoid permission issues
+  local temp_check="/tmp/.hytale-version-check-$$"
   
   if ! wget -q --timeout=10 -O "$temp_check" "$SCRIPT_URL" 2>/dev/null; then
     rm -f "$temp_check"
     if [ "$silent" = "false" ]; then
       echo -e "${YELLOW}⚠ Unable to check for updates (network issue or GitHub unavailable)${NC}"
+    fi
+    return 1
+  fi
+  
+  # Verify download succeeded
+  if [ ! -f "$temp_check" ] || [ ! -s "$temp_check" ]; then
+    rm -f "$temp_check"
+    if [ "$silent" = "false" ]; then
+      echo -e "${YELLOW}⚠ Downloaded file is empty or missing${NC}"
     fi
     return 1
   fi
