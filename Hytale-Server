@@ -281,18 +281,21 @@ check_for_updates() {
     echo -e "${BLUE}Checking for installer script updates...${NC}"
   fi
   
-  # Get latest release info from GitHub
-  local latest_info=$(curl -s "$VERSION_CHECK_URL" 2>/dev/null)
+  # Download the raw script and extract version directly using wget
+  mkdir -p "$TEMP_DIR"
+  local temp_check="$TEMP_DIR/.hytale-version-check-$$"
   
-  if [ -z "$latest_info" ]; then
+  if ! wget -q --timeout=10 -O "$temp_check" "$SCRIPT_URL" 2>/dev/null; then
+    rm -f "$temp_check"
     if [ "$silent" = "false" ]; then
-      echo -e "${YELLOW}⚠ Unable to check for updates (network issue or rate limit)${NC}"
+      echo -e "${YELLOW}⚠ Unable to check for updates (network issue or GitHub unavailable)${NC}"
     fi
     return 1
   fi
   
-  # Extract version from tag_name
-  local latest_version=$(echo "$latest_info" | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
+  # Extract version from the remote script
+  local latest_version=$(grep 'SCRIPT_VERSION=' "$temp_check" | head -1 | sed -E 's/.*SCRIPT_VERSION="?([0-9.]+)"?.*/\1/')
+  rm -f "$temp_check"
   
   if [ -z "$latest_version" ]; then
     if [ "$silent" = "false" ]; then
@@ -359,7 +362,7 @@ self_update() {
   echo -e "${CYAN}[2/3]${NC} Downloading latest version..."
   local temp_script="${script_path}.tmp"
   
-  if ! curl -fsSL "$SCRIPT_URL" -o "$temp_script" 2>/dev/null; then
+  if ! wget -q --timeout=30 -O "$temp_script" "$SCRIPT_URL" 2>/dev/null; then
     echo -e "${RED}Failed to download update${NC}" >&2
     echo -e "${YELLOW}Your current version is still intact${NC}"
     rm -f "$temp_script"
@@ -469,7 +472,7 @@ install_mod_internal() {
   fi
   echo -e "${BLUE}Source: $MOD_URL${NC}"
   
-  if curl -L "$MOD_URL" -o "$MOD_PATH" --progress-bar; then
+  if wget --show-progress -O "$MOD_PATH" "$MOD_URL" 2>&1 | grep -v 'Length:' | grep -v 'Saving to:'; then
     if [ -f "$MOD_PATH" ] && [ -s "$MOD_PATH" ]; then
       local MOD_SIZE=$(du -h "$MOD_PATH" | cut -f1)
       if [ "$is_dependency" = true ]; then
