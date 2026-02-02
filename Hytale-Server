@@ -11,6 +11,13 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 # =========================================
 
+# ================= VERSION =================
+SCRIPT_VERSION="1.0.0"
+SCRIPT_REPO="johnoclockdk/Hytale-Server-Installer"
+SCRIPT_URL="https://raw.githubusercontent.com/$SCRIPT_REPO/main/Hytale-Server"
+VERSION_CHECK_URL="https://api.github.com/repos/$SCRIPT_REPO/releases/latest"
+# =========================================
+
 # ================= CONFIG =================
 USER_NAME=$(whoami)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,11 +30,13 @@ DOWNLOADER_URL="https://downloader.hytale.com/hytale-downloader.zip"
 RESTART_CRON="0 0 */3 * * $(realpath $0) restart > /dev/null 2>&1" # Every 3 days at midnight
 BACKUP_CRON="0 1 * * * $(realpath $0) backup > /dev/null 2>&1" # Daily at 1:00 AM
 AUTOSTART_CRON="@reboot sleep 30 && $(realpath $0) start --skip-auth > /dev/null 2>&1" # Start on boot
+AUTOUPDATE_CRON="0 2 * * 0 $(realpath $0) self-update --auto > /dev/null 2>&1" # Weekly on Sunday at 2:00 AM
 BACKUP_RETENTION=7
 PORT=5520
 MIN_DISK_SPACE_MB=5120  # 5 GB minimum
 AUTH_WAIT_TIMEOUT=120   # 2 minutes for auth URL
 MODS_DIR="$BASE_DIR/mods"
+VERSION_FILE="$SCRIPT_DIR/.installer-version"
 # =========================================
 
 # ================= MODS LIST =================
@@ -251,6 +260,179 @@ create_backup_archive() {
   else
     echo -e "${RED}Failed to create backup${NC}" >&2
     return 1
+  fi
+}
+
+# ================= AUTO-UPDATE FUNCTIONS =================
+
+# Check for script updates
+check_for_updates() {
+  local silent=${1:-false}
+  
+  if [ "$silent" = "false" ]; then
+    echo -e "${BLUE}Checking for installer script updates...${NC}"
+  fi
+  
+  # Get latest release info from GitHub
+  local latest_info=$(curl -s "$VERSION_CHECK_URL" 2>/dev/null)
+  
+  if [ -z "$latest_info" ]; then
+    if [ "$silent" = "false" ]; then
+      echo -e "${YELLOW}⚠ Unable to check for updates (network issue or rate limit)${NC}"
+    fi
+    return 1
+  fi
+  
+  # Extract version from tag_name
+  local latest_version=$(echo "$latest_info" | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
+  
+  if [ -z "$latest_version" ]; then
+    if [ "$silent" = "false" ]; then
+      echo -e "${YELLOW}⚠ Could not determine latest version${NC}"
+    fi
+    return 1
+  fi
+  
+  # Compare versions
+  if [ "$latest_version" != "$SCRIPT_VERSION" ]; then
+    echo -e "${YELLOW}┌─────────────────────────────────────────┐${NC}"
+    echo -e "${YELLOW}│  Update Available!                      │${NC}"
+    echo -e "${YELLOW}├─────────────────────────────────────────┤${NC}"
+    echo -e "${YELLOW}│  Current:  v$SCRIPT_VERSION${NC}"
+    echo -e "${YELLOW}│  Latest:   v$latest_version${NC}"
+    echo -e "${YELLOW}├─────────────────────────────────────────┤${NC}"
+    echo -e "${YELLOW}│  Run: ./Hytale-Server self-update       │${NC}"
+    echo -e "${YELLOW}└─────────────────────────────────────────┘${NC}"
+    return 0
+  else
+    if [ "$silent" = "false" ]; then
+      echo -e "${GREEN}✓ You are running the latest version (v$SCRIPT_VERSION)${NC}"
+    fi
+    return 1
+  fi
+}
+
+# Self-update the installer script
+self_update() {
+  local auto_mode=${1:-false}
+  
+  echo ""
+  echo -e "${BOLD}${CYAN}=== Updating Installer Script ===${NC}"
+  echo ""
+  
+  # Check for updates first
+  if ! check_for_updates true; then
+    echo -e "${GREEN}✓ Already up to date (v$SCRIPT_VERSION)${NC}"
+    return 0
+  fi
+  
+  # Ask for confirmation unless in auto mode
+  if [ "$auto_mode" != "true" ]; then
+    read -p "Update installer script? (yes/no): " CONFIRM
+    if [ "$CONFIRM" != "yes" ]; then
+      echo -e "${YELLOW}Update cancelled${NC}"
+      return 0
+    fi
+  fi
+  
+  # Create backup of current script
+  local script_path=$(realpath "$0")
+  local backup_path="${script_path}.backup"
+  
+  echo -e "${CYAN}[1/3]${NC} Backing up current script..."
+  if cp "$script_path" "$backup_path"; then
+    echo -e "${GREEN}✓ Backup created${NC}"
+  else
+    echo -e "${RED}Failed to create backup${NC}" >&2
+    return 1
+  fi
+  
+  # Download latest version
+  echo -e "${CYAN}[2/3]${NC} Downloading latest version..."
+  local temp_script="${script_path}.tmp"
+  
+  if ! curl -fsSL "$SCRIPT_URL" -o "$temp_script" 2>/dev/null; then
+    echo -e "${RED}Failed to download update${NC}" >&2
+    echo -e "${YELLOW}Your current version is still intact${NC}"
+    rm -f "$temp_script"
+    return 1
+  fi
+  
+  # Verify download
+  if [ ! -s "$temp_script" ]; then
+    echo -e "${RED}Downloaded file is empty${NC}" >&2
+    rm -f "$temp_script"
+    return 1
+  fi
+  
+  # Replace script
+  echo -e "${CYAN}[3/3]${NC} Installing update..."
+  if mv "$temp_script" "$script_path"; then
+    chmod +x "$script_path"
+    echo -e "${GREEN}✓ Update installed successfully${NC}"
+    
+    # Update version file
+    echo "$SCRIPT_VERSION" > "$VERSION_FILE"
+    
+    # Clean up backup after successful update
+    rm -f "$backup_path"
+    
+    echo ""
+    echo -e "${GREEN}==========================================${NC}"
+    echo -e "${BOLD}${GREEN}Installer script updated!${NC}"
+    echo -e "${GREEN}==========================================${NC}"
+    echo ""
+    echo -e "${YELLOW}Note: Please run your command again with the updated script${NC}"
+    
+    return 0
+  else
+    echo -e "${RED}Failed to install update${NC}" >&2
+    echo -e "${YELLOW}Restoring backup...${NC}"
+    mv "$backup_path" "$script_path"
+    echo -e "${GREEN}✓ Backup restored${NC}"
+    return 1
+  fi
+}
+
+# Enable/disable auto-update
+toggle_autoupdate() {
+  echo ""
+  echo -e "${BOLD}${CYAN}=== Auto-Update Configuration ===${NC}"
+  echo ""
+  
+  # Check if auto-update is currently enabled
+  local is_enabled=false
+  if crontab -l 2>/dev/null | grep -q "$(basename $0) self-update --auto"; then
+    is_enabled=true
+  fi
+  
+  if [ "$is_enabled" = true ]; then
+    echo -e "${BLUE}Current status: ${GREEN}ENABLED${NC}"
+    echo ""
+    read -p "Do you want to DISABLE auto-updates? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" = "yes" ]; then
+      # Remove from crontab
+      (crontab -l 2>/dev/null | grep -v "$(basename $0) self-update --auto") | crontab -
+      echo -e "${GREEN}✓ Auto-update disabled${NC}"
+    else
+      echo -e "${YELLOW}No changes made${NC}"
+    fi
+  else
+    echo -e "${BLUE}Current status: ${RED}DISABLED${NC}"
+    echo ""
+    echo -e "${YELLOW}Auto-update will check for script updates weekly (Sunday at 2:00 AM)${NC}"
+    echo ""
+    read -p "Do you want to ENABLE auto-updates? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" = "yes" ]; then
+      # Add to crontab
+      (crontab -l 2>/dev/null; echo "$AUTOUPDATE_CRON") | crontab -
+      echo -e "${GREEN}✓ Auto-update enabled${NC}"
+      echo -e "${BLUE}The installer script will automatically update every Sunday at 2:00 AM${NC}"
+    else
+      echo -e "${YELLOW}No changes made${NC}"
+    fi
   fi
 }
 
@@ -1893,7 +2075,7 @@ manage_mods() {
 
 # Show usage information
 show_usage() {
-  echo -e "${CYAN}Hytale Dedicated Server Manager${NC}"
+  echo -e "${CYAN}Hytale Dedicated Server Manager${NC} ${YELLOW}v$SCRIPT_VERSION${NC}"
   echo ""
   echo "Usage: $0 [command] [options]"
   echo ""
@@ -1915,6 +2097,11 @@ show_usage() {
   echo "  autobackup   - Toggle automatic backups"
   echo "  autorestart  - Toggle automatic restarts"
   echo ""
+  echo "Installer Management:"
+  echo "  self-update  - Update this installer script"
+  echo "  check-update - Check for installer updates"
+  echo "  autoupdate   - Toggle automatic installer updates"
+  echo ""
   echo "Mods Management:"
   echo "  mods list                - List available and installed mods"
   echo "  mods install <name>      - Install a mod"
@@ -1924,6 +2111,12 @@ show_usage() {
 }
 
 # ================= MAIN =================
+
+# Check for updates on startup (silent check, only show if update available)
+if [ "$1" != "self-update" ] && [ "$1" != "check-update" ] && [ "$1" != "--auto" ]; then
+  check_for_updates true 2>/dev/null || true
+fi
+
 # Parse command line arguments
 if [ $# -eq 0 ]; then
   # No arguments, show interactive menu
@@ -1972,6 +2165,19 @@ else
       ;;
     mods)
       manage_mods "$2" "$3"
+      ;;
+    self-update)
+      if [ "$2" = "--auto" ]; then
+        self_update true
+      else
+        self_update false
+      fi
+      ;;
+    check-update)
+      check_for_updates false
+      ;;
+    autoupdate)
+      toggle_autoupdate
       ;;
     status)
       show_status

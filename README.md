@@ -36,6 +36,9 @@ That's it! Visit the authentication URL when prompted.
 | `./Hytale-Server rotate-logs` | Manage and rotate server logs |
 | `./Hytale-Server autobackup` | Toggle automatic backups |
 | `./Hytale-Server autorestart` | Toggle automatic restarts |
+| `./Hytale-Server self-update` | Update the installer script |
+| `./Hytale-Server check-update` | Check for installer updates |
+| `./Hytale-Server autoupdate` | Toggle automatic installer updates |
 | `./Hytale-Server mods list` | List available and installed mods |
 | `./Hytale-Server mods install <name\|number>` | Install a mod |
 | `./Hytale-Server mods uninstall <name\|number>` | Uninstall a mod |
@@ -61,6 +64,7 @@ That's it! Visit the authentication URL when prompted.
 - ⏰ **Auto-Restart** - Optional scheduled server restarts every 3 days
 - 📊 **Status Monitoring** - View server status, logs, and configuration at a glance
 - 🗂️ **Log Rotation** - Compress and manage server logs
+- 🔄 **Auto-Update** - Automatic installer script updates (weekly check)
 
 ---
 
@@ -129,6 +133,50 @@ Restore your world from a previous backup:
 ```
 
 Select from available backups - safety backup created automatically before restore.
+
+---
+
+## 🔄 Auto-Update
+
+The installer script can automatically update itself to get the latest features and bug fixes.
+
+### Check for Updates
+
+Check if a newer version is available:
+
+```bash
+./Hytale-Server check-update
+```
+
+### Manual Update
+
+Update the installer script to the latest version:
+
+```bash
+./Hytale-Server self-update
+```
+
+**What happens:**
+- Creates a backup of the current script
+- Downloads the latest version from GitHub
+- Verifies the download
+- Automatically rolls back if anything fails
+
+### Enable Auto-Update
+
+Turn on automatic weekly updates (every Sunday at 2:00 AM):
+
+```bash
+./Hytale-Server autoupdate
+```
+
+**Features:**
+- Automatic weekly checks for script updates
+- Safe update process with automatic rollback
+- No interruption to your server
+- Toggle on/off anytime
+
+**Note:** Auto-update only updates the installer script itself, not the Hytale server. Use `./Hytale-Server update` for server updates.
 
 ---
 ## 🎮 Mod Management
